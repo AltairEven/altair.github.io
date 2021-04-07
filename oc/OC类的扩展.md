@@ -106,7 +106,6 @@ struct objc_class : objc_object {
 void *baseMethodList;
 protocol_list_t * baseProtocols;
 const ivar_list_t * ivars;
-
 const uint8_t * weakIvarLayout;
 property_list_t *baseProperties;
 ```
@@ -127,6 +126,178 @@ protocol_array_t protocols;
 ## 如何扩展OC类？
 
 ### methods
+methods在`ro`和`rw`中的存储方式，分别为`method_list_t`和`method_array_t`，首先我们分析一下这两个结构。
+#### method_list_t和method_array_t
+```c
+// Two bits of entsize are used for fixup markers.
+// Reserve the top half of entsize for more flags. We never
+// need entry sizes anywhere close to 64kB.
+//
+// Currently there is one flag defined: the small method list flag,
+// method_t::smallMethodListFlag. Other flags are currently ignored.
+// (NOTE: these bits are only ignored on runtimes that support small
+// method lists. Older runtimes will treat them as part of the entry
+// size!)
+struct method_list_t : entsize_list_tt<method_t, method_list_t, 0xffff0003, method_t::pointer_modifier> {
+    bool isUniqued() const;
+    bool isFixedUp() const;
+    void setFixedUp();
+
+    uint32_t indexOfMethod(const method_t *meth) const {
+        uint32_t i = 
+            (uint32_t)(((uintptr_t)meth - (uintptr_t)this) / entsize());
+        ASSERT(i < count);
+        return i;
+    }
+
+    bool isSmallList() const {
+        return flags() & method_t::smallMethodListFlag;
+    }
+
+    bool isExpectedSize() const {
+        if (isSmallList())
+            return entsize() == method_t::smallSize;
+        else
+            return entsize() == method_t::bigSize;
+    }
+
+    method_list_t *duplicate() const {
+        method_list_t *dup;
+        if (isSmallList()) {
+            dup = (method_list_t *)calloc(byteSize(method_t::bigSize, count), 1);
+            dup->entsizeAndFlags = method_t::bigSize;
+        } else {
+            dup = (method_list_t *)calloc(this->byteSize(), 1);
+            dup->entsizeAndFlags = this->entsizeAndFlags;
+        }
+        dup->count = this->count;
+        std::copy(begin(), end(), dup->begin());
+        return dup;
+    }
+};
+```
+说白了，`method_list_t`就是一个存放`method_t`的list。
+```c
+class method_array_t : 
+    public list_array_tt<method_t, method_list_t, method_list_t_authed_ptr>
+{
+    typedef list_array_tt<method_t, method_list_t, method_list_t_authed_ptr> Super;
+
+ public:
+    method_array_t() : Super() { }
+    method_array_t(method_list_t *l) : Super(l) { }
+
+    const method_list_t_authed_ptr<method_list_t> *beginCategoryMethodLists() const {
+        return beginLists();
+    }
+    
+    const method_list_t_authed_ptr<method_list_t> *endCategoryMethodLists(Class cls) const;
+};
+```
+也是一个存放`method_t`的list。
+
+那么就是说，如果我们想要扩展方法，就必须得往这两个list中插入我们想要增加的方法，或者把list中的方法实现替换成我们想要的实现。
+
+#### 如何扩充method list
+首先`class_ro_t`中的`baseMethodList`，即基本方法列表，几乎是定死的。它只在编译器设置了`ptrauth`（https://developer.apple.com/documentation/security/preparing_your_app_to_work_with_pointer_authentication?language=objc ）时是动态生成的。但是它依然是`不可修改`的。
+
+通过搜索源码，我们发现除了类本身的`baseMethodList`之外，`method_list_t`只出现在`protocol_t`和`category_t`这两个结构中，那是不是可以通过添加`protocol`和`category`，就能够修改`method_list_t`的值呢？
+我们先看`category`：
+```c
+struct category_t {
+    const char *name;
+    classref_t cls;
+    WrappedPtr<method_list_t, PtrauthStrip> instanceMethods;
+    WrappedPtr<method_list_t, PtrauthStrip> classMethods;
+    struct protocol_list_t *protocols;
+    struct property_list_t *instanceProperties;
+    // Fields below this point are not always present on disk.
+    struct property_list_t *_classProperties;
+
+    method_list_t *methodsForMeta(bool isMeta) {
+        if (isMeta) return classMethods;
+        else return instanceMethods;
+    }
+
+    property_list_t *propertiesForMeta(bool isMeta, struct header_info *hi);
+    
+    protocol_list_t *protocolsForMeta(bool isMeta) {
+        if (isMeta) return nullptr;
+        else return protocols;
+    }
+};
+```
+`category`结构提供了两个`method_list_t`，一个是`instanceMethods`，另一个是`classMethods`。字面意思理解，就是一个实例方法列表和一个类方法列表。
+另外，我们可以发现`method_list_t *methodsForMeta(bool isMeta)`这个方法，将这两个成员返回，而这个函数，在`attachCategories`(`realizeClassWithoutSwift`和`_read_images`)时被调用。
+```c
+// Attach method lists and properties and protocols from categories to a class.
+// Assumes the categories in cats are all loaded and sorted by load order, 
+// oldest categories first.
+static void
+attachCategories(Class cls, const locstamped_category_t *cats_list, uint32_t cats_count,
+                 int flags)
+```
+在`attachCategories`时，`category`中定义的方法，会以一个`method_list_t`的二维数组的形式，添加到`class`的`bits`中，并且是顺序添加。
+也就是说，`category`确实提供了扩展`method`的可行性，并且是直接扩展方法列表。
+
+继续看`protocol`：
+```c
+struct protocol_t : objc_object {
+    const char *mangledName;
+    struct protocol_list_t *protocols;
+    method_list_t *instanceMethods;
+    method_list_t *classMethods;
+    method_list_t *optionalInstanceMethods;
+    method_list_t *optionalClassMethods;
+    property_list_t *instanceProperties;
+```
+`protocol`中确实定义了实例方法和类方法，并且区分了`optional`和`required`。但是通过查看源码，并没有发现`protocol`方法添加到类上的时机。
+我们可以写一段程序验证一下我们的想法：
+```Objective-C
+@protocol MyProtocol <NSObject>
+
+- (void)add;
++ (void)minus;
+
+@end
+
+@interface TestProtocolMethodList : NSObject <MyProtocol>
+
+@end
+
+@implementation TestProtocolMethodList
+
+- (void)addTest {}
+
+//- (void)add {}
+
++ (void)minusTest {}
+
+//+ (void)minus {}
+
+@end
+
+unsigned int iCount = 0;
+Method *iMethods = class_copyMethodList([[TestProtocolMethodList class] class], &iCount);
+for (int n = 0; n < iCount; n++) {
+    Method m = *(iMethods + n);
+    SEL sel = method_getName(m);
+    NSLog(@"%@", NSStringFromSelector(sel));
+}
+unsigned int cCount = 0;
+Method *cMethods = class_copyMethodList(objc_getMetaClass([NSStringFromClass([TestProtocolMethodList class]) UTF8String]), &cCount);
+for (int n = 0; n < cCount; n++) {
+    Method m = *(cMethods + n);
+    SEL sel = method_getName(m);
+    NSLog(@"%@", NSStringFromSelector(sel));
+}
+```
+通过打印，我们会发现:
+- 在没有实现`MyProtocol`定义的方法时，日志输出的只有`TestProtocolMethodList`本身自带的方法（`addTest`和`minusTest`）
+- 在实现了`MyProtocol`定义的方法后，日志输出`TestProtocolMethodList`的方法列表里，包含了所有的方法（貌似是废话）
+
+这样印证了，只是遵循`protocol`是不会默认添加方法到方法列表的。
+
 
 ### protocols
 
