@@ -490,6 +490,5 @@ for (int n = 0; n < pCount; n++) {
     - 我们可以在`原类`和`Extension`中对于同一个`Property`定义不同的读写权限，所以如果我们在原类中没有定义`write`权限，那么我们必须要自己实现该`Property`的`setter`方法。
     - 原类的方法和`Property`默认是`public`的，而`Extension`中定义的可以认为是“`private`”的，但是如果你把`Extension`定义再独立的`.h`文件中，他们也会是`public`的。
 
-```markdown
-结尾，奉上苹果的官方建议：[Customizing Existing Classes](https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/ProgrammingWithObjectiveC/CustomizingExistingClasses/CustomizingExistingClasses.html#//apple_ref/doc/uid/TP40011210-CH6-SW1)
-```
+# 结尾
+奉上苹果的官方建议：[Customizing Existing Classes](https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/ProgrammingWithObjectiveC/CustomizingExistingClasses/CustomizingExistingClasses.html#//apple_ref/doc/uid/TP40011210-CH6-SW1)
