@@ -492,10 +492,5 @@ for (int n = 0; n < pCount; n++) {
     - 原类的方法和`Property`默认是`public`的，而`Extension`中定义的可以认为是“`private`”的，但是如果你把`Extension`定义在独立的`.h`文件中，他们也会是`public`的。
 
 # 参考资料
-<blockquote>
-
 - ObjC runtime源码：[objc4](https://opensource.apple.com/source/objc4/)
-
 - 苹果的官方建议：[Customizing Existing Classes](https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/ProgrammingWithObjectiveC/CustomizingExistingClasses/CustomizingExistingClasses.html#//apple_ref/doc/uid/TP40011210-CH6-SW1)
-
-</blockquote>>
