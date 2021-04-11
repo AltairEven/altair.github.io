@@ -202,7 +202,7 @@ class method_array_t :
 #### 如何扩充method list
 首先`class_ro_t`中的`baseMethodList`，即基本方法列表，几乎是定死的。它只在编译器设置了`ptrauth`（[pointer_authentication](https://developer.apple.com/documentation/security/preparing_your_app_to_work_with_pointer_authentication?language=objc)）时是动态生成的，但是依然是`不可修改`的。
 
-通过搜索源码，我们发现除了类本身的`baseMethodList`之外，`method_list_t`只出现在`protocol_t`和`category_t`这两个结构中，那是不是可以通过添加`protocol`和`category`，就能够修改`method_list_t`的值呢？
+通过搜索源码，我们发现除了类本身的`baseMethodList`之外，`method_list_t`只出现在`protocol_t`和`category_t`这两个结构中，那是不是通过添加`protocol`和`category`，就能够修改`method_list_t`的值呢？
 ##### `Category`
 我们先看`category`：
 ```c
@@ -300,7 +300,7 @@ for (int n = 0; n < cCount; n++) {
 
 这样印证了，只是遵循`protocol`是不会默认添加方法到方法列表的。
 ##### `addMethod`
-除了`Category`和`Protocol`之外，我们还在`addMethod`函数中找到了`method_list_t`的身影。而`addMethod`函数除了在`MethodizeClass`（`realizeClassWithoutSwift`）时会被调用之外，还在`class_addMethod`和`class_replaceMethod`是被调用，也就是我们熟知的“Runtime API”。
+除了`Category`和`Protocol`之外，我们还在`addMethod`函数中找到了`method_list_t`的身影。而`addMethod`函数除了在`MethodizeClass`（`realizeClassWithoutSwift`）时会被调用之外，还在`class_addMethod`和`class_replaceMethod`是被调用，即我们熟知的“Runtime API”。
 
 也就是说，使用`class_addMethod`和`class_replaceMethod`这两个“Runtime API”，也可以实现对类方法的扩展。
 
@@ -404,7 +404,7 @@ typedef struct {
     const char * _Nonnull value;          /**< The value of the attribute (usually empty) */
 } objc_property_attribute_t;
 ```
-“属性名称”和“属性值”分别是什么意思呢？我没有找到确切的文档描述，但是通过以下的代码可以打印出来看看，有兴趣的同学可以试试看。
+那这里的“属性名称”和“属性值”分别是什么意思呢？我没有找到确切的文档描述，但是通过以下的代码可以打印出来看看，有兴趣的同学可以试试看。
 ```c
  int pCount = 0;
 objc_property_t *properties = class_copyPropertyList([[TestClass class] class], &pCount);
@@ -462,7 +462,7 @@ for (int n = 0; n < pCount; n++) {
 通过之前的描述，我们知道添加`Category`，可以为一个类提供除了`ivars`以外的所有扩展，可谓非常强大。
 但是由于一些编译限制，以及运行时逻辑，导致我们使用这个方案时，需要注意以下几个问题：
 - 方法重名
-    - 我们在定义`Category`时，可以任意声明方法，难免会出现重名现象。出现重名后，由于OC的方法调用机制，会导致我们的代码可能无法按照预期执行。因此，我们必须尽量避免重名方法的出现。
+    - 我们在定义`Category`时，可以任意声明方法，因此难免会出现重名现象。出现重名后，由于OC的方法调用机制，会导致我们的代码可能无法按照预期执行。所以，我们必须尽量避免重名方法的出现。
     - 如果定义了重名方法，那么后定义的方法会被执行（如果是在不同文件中，则后编译的方法会被执行）；原类中的重名方法始终不会被调用到。
 - 定义`Property`
     - 我们定义的`property`会被正确加到类的`properties`中，但是由于category无法提供`ivars`扩展，导致编译器无法为类创建对应的成员变量，所以我们需要为我们定义的`property`实现`getter`和`setter`方法。
@@ -480,7 +480,8 @@ for (int n = 0; n < pCount; n++) {
     - 由于`@optional`的声明在未实现时，不会引起编译错误，所以我们调用`Protocol`声明的`方法`（或`property`）时，需要先使用`respondsToSelector`判断调用方是否实现了该`方法`（或`property`的`getter`和`setter`）
 
 ### Runtime API
-`Runtime API`为我们提供了非常强大的操作类内部结构的工具，但是我们在使用的时候，依然要小心谨慎，特别是进行方法替换的时候，需要明确目的。
+`Runtime API`为我们提供了非常强大的操作类内部结构的工具，但是我们在使用的时候，依然要小心谨慎。
+特别是进行方法替换的时候，需要明确目的，并且避免多次添加同一方法。
 ### Inherit
 继承的方式，可以完成几乎所有的扩展，但是继承之后就是一个新的类了，它会拥有一份新的结构。
 继承时需要注意的，主要是变量权限和方法重写问题。
@@ -488,7 +489,8 @@ for (int n = 0; n < pCount; n++) {
 `Extension`可以理解为在原类上继续做扩展，所以没有太多需要注意的，但是苹果还是列出了一些可能出现的问题，希望我们关注：
 - 权限
     - 我们可以在`原类`和`Extension`中对于同一个`Property`定义不同的读写权限，所以如果我们在原类中没有定义`write`权限，那么我们必须要自己实现该`Property`的`setter`方法。
-    - 原类的方法和`Property`默认是`public`的，而`Extension`中定义的可以认为是“`private`”的，但是如果你把`Extension`定义再独立的`.h`文件中，他们也会是`public`的。
+    - 原类的方法和`Property`默认是`public`的，而`Extension`中定义的可以认为是“`private`”的，但是如果你把`Extension`定义在独立的`.h`文件中，他们也会是`public`的。
 
-# 结尾
-奉上苹果的官方建议：[Customizing Existing Classes](https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/ProgrammingWithObjectiveC/CustomizingExistingClasses/CustomizingExistingClasses.html#//apple_ref/doc/uid/TP40011210-CH6-SW1)
+# 参考资料
+- ObjC runtime源码：[objc4](https://opensource.apple.com/source/objc4/)
+- 苹果的官方建议：[Customizing Existing Classes](https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/ProgrammingWithObjectiveC/CustomizingExistingClasses/CustomizingExistingClasses.html#//apple_ref/doc/uid/TP40011210-CH6-SW1)
