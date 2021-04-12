@@ -463,13 +463,13 @@ for (int n = 0; n < pCount; n++) {
 但是由于一些编译限制，以及运行时逻辑，导致我们使用这个方案时，需要注意以下几个问题：
 - 方法重名
     - 我们在定义`Category`时，可以任意声明方法，因此难免会出现重名现象。出现重名后，由于OC的方法调用机制，会导致我们的代码可能无法按照预期执行。所以，我们必须尽量避免重名方法的出现。
-    - 如果定义了重名方法，那么后定义的方法会被执行（如果是在不同文件中，则后编译的方法会被执行）；原类中的重名方法始终不会被调用到。
+    - 如果定义了重名方法，那么后定义的方法会被执行（如果是在不同文件中，则后编译的方法会被执行）；原类中的重名方法始终不会被调用到，哪怕它是最后参与编译的。
 - 定义`Property`
     - 我们定义的`property`会被正确加到类的`properties`中，但是由于category无法提供`ivars`扩展，导致编译器无法为类创建对应的成员变量，所以我们需要为我们定义的`property`实现`getter`和`setter`方法。
-    - 我们在定义`property`时，可以通过`objc_setAssociatedObject`添加关联属性，关联属性需要设置`objc_AssociationPolicy`，但是它不包括`weak`。
+    - 我们在定义`property`时，可以通过`objc_setAssociatedObject`添加关联属性。关联属性需要设置`objc_AssociationPolicy`，以确定`property`的引用类型，但是其中不包括`weak`。
 - 导入
-    - 在`.m`(或`.mm`)文件中使用`Category`时，我们需要`import`对应的头文件
-    - 如果`Category`被打包到`.a`或者`.framework`中，默认该`Category`并不会被编译，所以需要一些额外处理（参考[这里](https://blog.csdn.net/skylin19840101/article/details/51821932/)）
+    - 在`.m`(或`.mm`)文件中使用`Category`定义的方法时，我们需要先`import`对应的头文件
+    - 如果`Category`被打包到`.a`或者`.framework`中，默认该`Category`并不会被编译，所以需要一些额外处理（参考[让iOS静态库中的category变得可用](https://blog.csdn.net/skylin19840101/article/details/51821932/)）
 
 ### Protocol
 我们知道`Protocol`不会自动添加方法或者`Property`到类中，所以我们更多需要注意的，是如何定义和使用一个`Protocol`。
@@ -480,7 +480,7 @@ for (int n = 0; n < pCount; n++) {
     - 由于`@optional`的声明在未实现时，不会引起编译错误，所以我们调用`Protocol`声明的`方法`（或`property`）时，需要先使用`respondsToSelector`判断调用方是否实现了该`方法`（或`property`的`getter`和`setter`）
 
 ### Runtime API
-`Runtime API`为我们提供了非常强大的操作类内部结构的工具，但是我们在使用的时候，依然要小心谨慎。一些常见的问题，比如：
+`Runtime API`为我们提供了直接操作类内部结构的手段，所以我们在使用的时候，必须要非常小心。一些常见的问题，比如：
 - 方法类型
     - OC方法分为“类方法”和“实例方法”，我们在添加时需要明确该方法是哪种类型。如果是“类方法”，我们添加的对象是元类；如果是“实例方法”，我们添加的对象是类本身
     - 我们需要通过不同的方法来获取元类和类本身，使用`objc_getMetaClass`获取元类，使用`objc_getClass`获取类本身
@@ -488,17 +488,17 @@ for (int n = 0; n < pCount; n++) {
     - 通常我们使用`SEL`来标记一个OC方法，所以要保证我们调用的`SEL`和添加的`SEL`是同一个，否则会报`unrecognized selector`
     - 如果添加了同名方法，会导致只有其中一个会被调用到，与Catrgory不同的是，先添加的总是会被调用到，而后添加的不会被调用到
 - 参数
-    - 除了需要提供IMP只要，我们在添加方法时，还可能需要提供参数类型，它是`const char * _Nullable`类型，具体定义规则要参考[Type Encodings](https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/ObjCRuntimeGuide/Articles/ocrtTypeEncodings.html#//apple_ref/doc/uid/TP40008048-CH100-SW1)
+    - 除了需要提供IMP实现，我们在添加方法时，还可能需要提供参数类型，它是`const char * _Nullable`类型，具体定义规则要参考[Type Encodings](https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/ObjCRuntimeGuide/Articles/ocrtTypeEncodings.html#//apple_ref/doc/uid/TP40008048-CH100-SW1)
 
 <blockquote>
-    由于使用`Runtime API`添加方法是在运行时操作的，所以是一个非常危险的行为，一旦失误就会导致程序崩溃，所以一定要非常谨慎，并且经过细致的测试。
+    由于使用`Runtime API`添加方法是在运行时完成的操作，所以是一个非常危险的行为，一旦失误就会导致程序崩溃，所以一定要非常谨慎，并且经过细致的测试。
 </blockquote>>
 
 ### Inherit
 继承的方式，可以完成几乎所有的扩展，但是继承之后就是一个新的类了，它会拥有一份新的结构。
 继承时需要注意的，主要是变量权限和方法重写问题。
 ### Extension
-`Extension`可以理解为在原类上继续做扩展，所以没有太多需要注意的，但是苹果还是列出了一些可能出现的问题，希望我们关注：
+`Extension`可以理解为在原类上继续做扩展，所以没有太多需要注意的，但是苹果还是列出了一些可能出现的情况，希望我们关注：
 - 权限
     - 我们可以在`原类`和`Extension`中对于同一个`Property`定义不同的读写权限，所以如果我们在原类中没有定义`write`权限，那么我们必须要自己实现该`Property`的`setter`方法。
     - 原类的方法和`Property`默认是`public`的，而`Extension`中定义的可以认为是“`private`”的，但是如果你把`Extension`定义在独立的`.h`文件中，他们也会是`public`的。
