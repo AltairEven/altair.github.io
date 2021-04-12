@@ -480,8 +480,20 @@ for (int n = 0; n < pCount; n++) {
     - 由于`@optional`的声明在未实现时，不会引起编译错误，所以我们调用`Protocol`声明的`方法`（或`property`）时，需要先使用`respondsToSelector`判断调用方是否实现了该`方法`（或`property`的`getter`和`setter`）
 
 ### Runtime API
-`Runtime API`为我们提供了非常强大的操作类内部结构的工具，但是我们在使用的时候，依然要小心谨慎。
-特别是进行方法替换的时候，需要明确目的，并且避免多次添加同一方法。
+`Runtime API`为我们提供了非常强大的操作类内部结构的工具，但是我们在使用的时候，依然要小心谨慎。一些常见的问题，比如：
+- 方法类型
+    - OC方法分为“类方法”和“实例方法”，我们在添加时需要明确该方法是哪种类型。如果是“类方法”，我们添加的对象是元类；如果是“实例方法”，我们添加的对象是类本身
+    - 我们需要通过不同的方法来获取元类和类本身，使用`objc_getMetaClass`获取元类，使用`objc_getClass`获取类本身
+- 方法名
+    - 通常我们使用`SEL`来标记一个OC方法，所以要保证我们调用的`SEL`和添加的`SEL`是同一个，否则会报`unrecognized selector`
+    - 如果添加了同名方法，会导致只有其中一个会被调用到，与Catrgory不同的是，先添加的总是会被调用到，而后添加的不会被调用到
+- 参数
+    - 除了需要提供IMP只要，我们在添加方法时，还可能需要提供参数类型，它是`const char * _Nullable`类型，具体定义规则要参考[Type Encodings](https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/ObjCRuntimeGuide/Articles/ocrtTypeEncodings.html#//apple_ref/doc/uid/TP40008048-CH100-SW1)
+
+<blockquote>
+    由于使用`Runtime API`添加方法是在运行时操作的，所以是一个非常危险的行为，一旦失误就会导致程序崩溃，所以一定要非常谨慎，并且经过细致的测试。
+</blockquote>>
+
 ### Inherit
 继承的方式，可以完成几乎所有的扩展，但是继承之后就是一个新的类了，它会拥有一份新的结构。
 继承时需要注意的，主要是变量权限和方法重写问题。
