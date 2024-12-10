@@ -1,5 +1,5 @@
 # Memony
-![Memony](https://github.com/AltairEven/Altair/raw/main/App/Memony/AppIcon.png?raw=true "Memony app icon")
+![Memony](https://github.com/AltairEven/Altair/blob/main/App/Memony/AppIcon.png?raw=true#pic_center =500x500 "Memony app icon")
 
 Memony是一款可以快速添加日程提醒的软件。
 
