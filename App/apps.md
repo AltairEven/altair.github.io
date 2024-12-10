@@ -1,6 +1,8 @@
 # Memony
-<img src="https://github.com/AltairEven/Altair/blob/main/App/Memony/AppIcon.png?raw=true" width="360px" align="center">
-![Memony](https://github.com/AltairEven/Altair/blob/main/App/Memony/AppIcon.png?raw=true#pic_center =360x)
+<div align="center">
+	<img src="https://github.com/AltairEven/Altair/blob/main/App/Memony/AppIcon.png?raw=true" width="360px">
+</div>
+
 
 Memony是一款可以快速添加日程提醒的软件。
 
